@@ -140,6 +140,7 @@ MachineType AtomicOpType(Operator const* op) {
   V(Word64Clz, Operator::kNoProperties, 1, 0, 1)                              \
   V(Word32ReverseBytes, Operator::kNoProperties, 1, 0, 1)                     \
   V(Word64ReverseBytes, Operator::kNoProperties, 1, 0, 1)                     \
+  V(BitcastTaggedSignedToWord, Operator::kNoProperties, 1, 0, 1)              \
   V(BitcastWordToTaggedSigned, Operator::kNoProperties, 1, 0, 1)              \
   V(TruncateFloat64ToWord32, Operator::kNoProperties, 1, 0, 1)                \
   V(ChangeFloat32ToFloat64, Operator::kNoProperties, 1, 0, 1)                 \
@@ -244,6 +245,7 @@ MachineType AtomicOpType(Operator const* op) {
   V(Word32PairShl, Operator::kNoProperties, 3, 0, 2)                          \
   V(Word32PairShr, Operator::kNoProperties, 3, 0, 2)                          \
   V(Word32PairSar, Operator::kNoProperties, 3, 0, 2)                          \
+  V(F64x2Splat, Operator::kNoProperties, 1, 0, 1)                             \
   V(F32x4Splat, Operator::kNoProperties, 1, 0, 1)                             \
   V(F32x4SConvertI32x4, Operator::kNoProperties, 1, 0, 1)                     \
   V(F32x4UConvertI32x4, Operator::kNoProperties, 1, 0, 1)                     \
@@ -261,6 +263,12 @@ MachineType AtomicOpType(Operator const* op) {
   V(F32x4Ne, Operator::kCommutative, 2, 0, 1)                                 \
   V(F32x4Lt, Operator::kNoProperties, 2, 0, 1)                                \
   V(F32x4Le, Operator::kNoProperties, 2, 0, 1)                                \
+  V(I64x2Splat, Operator::kNoProperties, 1, 0, 1)                             \
+  V(I64x2Neg, Operator::kNoProperties, 1, 0, 1)                               \
+  V(I64x2Add, Operator::kCommutative, 2, 0, 1)                                \
+  V(I64x2Sub, Operator::kNoProperties, 2, 0, 1)                               \
+  V(I64x2Eq, Operator::kCommutative, 2, 0, 1)                                 \
+  V(I64x2Ne, Operator::kCommutative, 2, 0, 1)                                 \
   V(I32x4Splat, Operator::kNoProperties, 1, 0, 1)                             \
   V(I32x4SConvertF32x4, Operator::kNoProperties, 1, 0, 1)                     \
   V(I32x4SConvertI16x8Low, Operator::kNoProperties, 1, 0, 1)                  \
@@ -440,11 +448,13 @@ MachineType AtomicOpType(Operator const* op) {
 
 #define SIMD_LANE_OP_LIST(V) \
   V(F32x4, 4)                \
+  V(I64x2, 2)                \
   V(I32x4, 4)                \
   V(I16x8, 8)                \
   V(I8x16, 16)
 
 #define SIMD_FORMAT_LIST(V) \
+  V(64x2, 64)               \
   V(32x4, 32)               \
   V(16x8, 16)               \
   V(8x16, 8)
@@ -550,6 +560,11 @@ struct MachineOperatorGlobalCache {
     Store##Type##NoWriteBarrier##Operator()                                \
         : Store##Type##Operator(kNoWriteBarrier) {}                        \
   };                                                                       \
+  struct Store##Type##AssertNoWriteBarrier##Operator final                 \
+      : public Store##Type##Operator {                                     \
+    Store##Type##AssertNoWriteBarrier##Operator()                          \
+        : Store##Type##Operator(kAssertNoWriteBarrier) {}                  \
+  };                                                                       \
   struct Store##Type##MapWriteBarrier##Operator final                      \
       : public Store##Type##Operator {                                     \
     Store##Type##MapWriteBarrier##Operator()                               \
@@ -590,6 +605,8 @@ struct MachineOperatorGlobalCache {
                                   kNoWriteBarrier)) {}                     \
   };                                                                       \
   Store##Type##NoWriteBarrier##Operator kStore##Type##NoWriteBarrier;      \
+  Store##Type##AssertNoWriteBarrier##Operator                              \
+      kStore##Type##AssertNoWriteBarrier;                                  \
   Store##Type##MapWriteBarrier##Operator kStore##Type##MapWriteBarrier;    \
   Store##Type##PointerWriteBarrier##Operator                               \
       kStore##Type##PointerWriteBarrier;                                   \
@@ -945,6 +962,8 @@ const Operator* MachineOperatorBuilder::Store(StoreRepresentation store_rep) {
     switch (store_rep.write_barrier_kind()) {                    \
       case kNoWriteBarrier:                                      \
         return &cache_.k##Store##kRep##NoWriteBarrier;           \
+      case kAssertNoWriteBarrier:                                \
+        return &cache_.k##Store##kRep##AssertNoWriteBarrier;     \
       case kMapWriteBarrier:                                     \
         return &cache_.k##Store##kRep##MapWriteBarrier;          \
       case kPointerWriteBarrier:                                 \
@@ -1289,6 +1308,11 @@ const Operator* MachineOperatorBuilder::S8x16Shuffle(
   return new (zone_)
       Operator1<uint8_t*>(IrOpcode::kS8x16Shuffle, Operator::kPure, "Shuffle",
                           2, 0, 0, 1, 0, 0, array);
+}
+
+const uint8_t* S8x16ShuffleOf(Operator const* op) {
+  DCHECK_EQ(IrOpcode::kS8x16Shuffle, op->opcode());
+  return OpParameter<uint8_t*>(op);
 }
 
 #undef PURE_BINARY_OP_LIST_32

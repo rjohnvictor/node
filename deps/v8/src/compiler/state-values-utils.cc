@@ -4,7 +4,7 @@
 
 #include "src/compiler/state-values-utils.h"
 
-#include "src/bit-vector.h"
+#include "src/utils/bit-vector.h"
 
 namespace v8 {
 namespace internal {
@@ -392,13 +392,12 @@ MachineType StateValuesAccess::iterator::type() {
   }
 }
 
-
-bool StateValuesAccess::iterator::operator!=(iterator& other) {
+bool StateValuesAccess::iterator::operator!=(
+    iterator& other) {  // NOLINT(runtime/references)
   // We only allow comparison with end().
   CHECK(other.done());
   return !done();
 }
-
 
 StateValuesAccess::iterator& StateValuesAccess::iterator::operator++() {
   Advance();

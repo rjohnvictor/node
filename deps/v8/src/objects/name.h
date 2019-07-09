@@ -5,9 +5,9 @@
 #ifndef V8_OBJECTS_NAME_H_
 #define V8_OBJECTS_NAME_H_
 
-#include "src/objects.h"
 #include "src/objects/heap-object.h"
-#include "torque-generated/class-definitions-from-dsl.h"
+#include "src/objects/objects.h"
+#include "torque-generated/field-offsets-tq.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -43,15 +43,19 @@ class Name : public HeapObject {
   // symbol properties are added, so we can optimize lookups on objects
   // that don't have the flag.
   inline bool IsInterestingSymbol() const;
+  inline bool IsInterestingSymbol(Isolate* isolate) const;
 
   // If the name is private, it can only name own properties.
-  inline bool IsPrivate();
+  inline bool IsPrivate() const;
+  inline bool IsPrivate(Isolate* isolate) const;
 
   // If the name is a private name, it should behave like a private
   // symbol but also throw on property access miss.
-  inline bool IsPrivateName();
+  inline bool IsPrivateName() const;
+  inline bool IsPrivateName(Isolate* isolate) const;
 
   inline bool IsUniqueName() const;
+  inline bool IsUniqueName(Isolate* isolate) const;
 
   static inline bool ContainsCachedArrayIndex(uint32_t hash);
 
@@ -67,11 +71,10 @@ class Name : public HeapObject {
   DECL_PRINTER(Name)
   void NameShortPrint();
   int NameShortPrint(Vector<char> str);
+  DECL_VERIFIER(Name)
 
   DEFINE_FIELD_OFFSET_CONSTANTS(HeapObject::kHeaderSize,
                                 TORQUE_GENERATED_NAME_FIELDS)
-
-  static const int kHeaderSize = kSize;
 
   // Mask constant for checking if a name has a computed hash code
   // and if it is a string that is an array index.  The least significant bit

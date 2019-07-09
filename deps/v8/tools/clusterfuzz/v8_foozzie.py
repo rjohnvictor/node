@@ -43,16 +43,29 @@ CONFIGS = dict(
     '--no-lazy',
     '--no-lazy-inner-functions',
   ],
+  ignition_no_ic=[
+    '--turbo-filter=~',
+    '--noopt',
+    '--liftoff',
+    '--no-wasm-tier-up',
+    '--no-use-ic',
+    '--no-lazy-feedback-allocation',
+  ],
   ignition_turbo=[],
+  ignition_turbo_no_ic=[
+    '--no-use-ic',
+  ],
   ignition_turbo_opt=[
     '--always-opt',
     '--no-liftoff',
     '--no-wasm-tier-up',
+    '--no-lazy-feedback-allocation'
   ],
   ignition_turbo_opt_eager=[
     '--always-opt',
     '--no-lazy',
     '--no-lazy-inner-functions',
+    '--no-lazy-feedback-allocation',
   ],
   jitless=[
     '--jitless',
@@ -63,6 +76,7 @@ CONFIGS = dict(
   slow_path_opt=[
     '--always-opt',
     '--force-slow-path',
+    '--no-lazy-feedback-allocation',
   ],
   trusted=[
     '--no-untrusted-code-mitigations',
@@ -70,6 +84,7 @@ CONFIGS = dict(
   trusted_opt=[
     '--always-opt',
     '--no-untrusted-code-mitigations',
+    '--no-lazy-feedback-allocation',
   ],
 )
 
@@ -86,6 +101,7 @@ ADDITIONAL_FLAGS = [
   (0.01, '--thread-pool-size=2'),
   (0.01, '--thread-pool-size=4'),
   (0.01, '--thread-pool-size=8'),
+  (0.1, '--interrupt-budget=1000'),
 ]
 
 # Timeout in seconds for one d8 run.
@@ -103,7 +119,7 @@ PREAMBLE = [
 ARCH_MOCKS = os.path.join(BASE_PATH, 'v8_mock_archs.js')
 SANITY_CHECKS = os.path.join(BASE_PATH, 'v8_sanity_checks.js')
 
-FLAGS = ['--abort-on-stack-or-string-length-overflow', '--expose-gc',
+FLAGS = ['--correctness-fuzzer-suppressions', '--expose-gc',
          '--allow-natives-syntax', '--invoke-weak-callbacks', '--omit-quit',
          '--es-staging', '--no-wasm-async-compilation',
          '--suppress-asm-messages']
@@ -176,6 +192,12 @@ def parse_args():
       '--first-config', help='first configuration', default='ignition')
   parser.add_argument(
       '--second-config', help='second configuration', default='ignition_turbo')
+  parser.add_argument(
+      '--first-config-extra-flags', action='append', default=[],
+      help='Additional flags to pass to the run of the first configuration')
+  parser.add_argument(
+      '--second-config-extra-flags', action='append', default=[],
+      help='Additional flags to pass to the run of the second configuration')
   parser.add_argument(
       '--first-d8', default='d8',
       help='optional path to first d8 executable, '
@@ -312,9 +334,13 @@ def main():
 
   # Set up runtime arguments.
   common_flags = FLAGS + ['--random-seed', str(options.random_seed)]
-  first_config_flags = common_flags + CONFIGS[options.first_config]
-  second_config_flags = common_flags + CONFIGS[options.second_config]
+  first_config_flags = (common_flags + CONFIGS[options.first_config] +
+                        options.first_config_extra_flags)
+  second_config_flags = (common_flags + CONFIGS[options.second_config] +
+                         options.second_config_extra_flags)
 
+  # TODO(machenbach): Deprecate calculating flag experiements in this script
+  # and instead pass flags as extra flags on command line.
   # Add additional flags to second config based on experiment percentages.
   for p, flag in ADDITIONAL_FLAGS:
     if rng.random() < p:

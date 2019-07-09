@@ -13,8 +13,9 @@ namespace wasm {
 namespace test_run_wasm_bulk_memory {
 
 namespace {
-void CheckMemoryEquals(TestingModuleBuilder& builder, size_t index,
-                       const std::vector<byte>& expected) {
+void CheckMemoryEquals(
+    TestingModuleBuilder& builder,  // NOLINT(runtime/references)
+    size_t index, const std::vector<byte>& expected) {
   const byte* mem_start = builder.raw_mem_start<byte>();
   const byte* mem_end = builder.raw_mem_end<byte>();
   size_t mem_size = mem_end - mem_start;
@@ -25,8 +26,9 @@ void CheckMemoryEquals(TestingModuleBuilder& builder, size_t index,
   }
 }
 
-void CheckMemoryEqualsZero(TestingModuleBuilder& builder, size_t index,
-                           size_t length) {
+void CheckMemoryEqualsZero(
+    TestingModuleBuilder& builder,  // NOLINT(runtime/references)
+    size_t index, size_t length) {
   const byte* mem_start = builder.raw_mem_start<byte>();
   const byte* mem_end = builder.raw_mem_end<byte>();
   size_t mem_size = mem_end - mem_start;
@@ -37,8 +39,9 @@ void CheckMemoryEqualsZero(TestingModuleBuilder& builder, size_t index,
   }
 }
 
-void CheckMemoryEqualsFollowedByZeroes(TestingModuleBuilder& builder,
-                                       const std::vector<byte>& expected) {
+void CheckMemoryEqualsFollowedByZeroes(
+    TestingModuleBuilder& builder,  // NOLINT(runtime/references)
+    const std::vector<byte>& expected) {
   CheckMemoryEquals(builder, 0, expected);
   CheckMemoryEqualsZero(builder, expected.size(),
                         builder.mem_size() - expected.size());
@@ -50,7 +53,7 @@ WASM_EXEC_TEST(MemoryInit) {
   WasmRunner<uint32_t, uint32_t, uint32_t, uint32_t> r(execution_tier);
   r.builder().AddMemory(kWasmPageSize);
   const byte data[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-  r.builder().AddPassiveDataSegment(Vector<const byte>(data));
+  r.builder().AddPassiveDataSegment(ArrayVector(data));
   BUILD(r,
         WASM_MEMORY_INIT(0, WASM_GET_LOCAL(0), WASM_GET_LOCAL(1),
                          WASM_GET_LOCAL(2)),
@@ -87,7 +90,7 @@ WASM_EXEC_TEST(MemoryInitOutOfBoundsData) {
   WasmRunner<uint32_t, uint32_t, uint32_t, uint32_t> r(execution_tier);
   r.builder().AddMemory(kWasmPageSize);
   const byte data[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-  r.builder().AddPassiveDataSegment(Vector<const byte>(data));
+  r.builder().AddPassiveDataSegment(ArrayVector(data));
   BUILD(r,
         WASM_MEMORY_INIT(0, WASM_GET_LOCAL(0), WASM_GET_LOCAL(1),
                          WASM_GET_LOCAL(2)),
@@ -110,7 +113,7 @@ WASM_EXEC_TEST(MemoryInitOutOfBounds) {
   WasmRunner<uint32_t, uint32_t, uint32_t, uint32_t> r(execution_tier);
   r.builder().AddMemory(kWasmPageSize);
   const byte data[kWasmPageSize] = {};
-  r.builder().AddPassiveDataSegment(Vector<const byte>(data));
+  r.builder().AddPassiveDataSegment(ArrayVector(data));
   BUILD(r,
         WASM_MEMORY_INIT(0, WASM_GET_LOCAL(0), WASM_GET_LOCAL(1),
                          WASM_GET_LOCAL(2)),
@@ -331,7 +334,7 @@ WASM_EXEC_TEST(DataDropTwice) {
   WasmRunner<uint32_t> r(execution_tier);
   r.builder().AddMemory(kWasmPageSize);
   const byte data[] = {0};
-  r.builder().AddPassiveDataSegment(Vector<const byte>(data));
+  r.builder().AddPassiveDataSegment(ArrayVector(data));
   BUILD(r, WASM_DATA_DROP(0), kExprI32Const, 0);
 
   CHECK_EQ(0, r.Call());
@@ -343,7 +346,7 @@ WASM_EXEC_TEST(DataDropThenMemoryInit) {
   WasmRunner<uint32_t> r(execution_tier);
   r.builder().AddMemory(kWasmPageSize);
   const byte data[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-  r.builder().AddPassiveDataSegment(Vector<const byte>(data));
+  r.builder().AddPassiveDataSegment(ArrayVector(data));
   BUILD(r, WASM_DATA_DROP(0),
         WASM_MEMORY_INIT(0, WASM_I32V_1(0), WASM_I32V_1(1), WASM_I32V_1(2)),
         kExprI32Const, 0);
@@ -381,7 +384,8 @@ void CheckTable(Isolate* isolate, Handle<WasmTableObject> table, Args... args) {
 
 template <typename WasmRunner, typename... Args>
 void CheckTableCall(Isolate* isolate, Handle<WasmTableObject> table,
-                    WasmRunner& r, uint32_t function_index, Args... args) {
+                    WasmRunner& r,  // NOLINT(runtime/references)
+                    uint32_t function_index, Args... args) {
   uint32_t args_length = static_cast<uint32_t>(sizeof...(args));
   CHECK_EQ(table->current_length(), args_length);
   double expected[] = {args...};
@@ -543,6 +547,8 @@ WASM_EXEC_TEST(TableCopyElems) {
       WASM_TABLE_COPY(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1), WASM_GET_LOCAL(2)),
       kExprI32Const, 0);
 
+  r.builder().FreezeSignatureMapAndInitializeWrapperCache();
+
   auto table = handle(
       WasmTableObject::cast(r.builder().instance_object()->tables().get(0)),
       isolate);
@@ -627,6 +633,8 @@ WASM_EXEC_TEST(TableCopyOobWrites) {
       r,
       WASM_TABLE_COPY(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1), WASM_GET_LOCAL(2)),
       kExprI32Const, 0);
+
+  r.builder().FreezeSignatureMapAndInitializeWrapperCache();
 
   auto table = handle(
       WasmTableObject::cast(r.builder().instance_object()->tables().get(0)),

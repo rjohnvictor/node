@@ -9,7 +9,7 @@
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
-#include "src/roots-inl.h"
+#include "src/roots/roots-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -240,33 +240,18 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kWord32:
       opcode = kX64Movl;
       break;
-#ifdef V8_COMPRESS_POINTERS
-    case MachineRepresentation::kTaggedSigned:
-      opcode = kX64MovqDecompressTaggedSigned;
-      break;
-    case MachineRepresentation::kTaggedPointer:
-      opcode = kX64MovqDecompressTaggedPointer;
-      break;
-    case MachineRepresentation::kTagged:
-      opcode = kX64MovqDecompressAnyTagged;
-      break;
     case MachineRepresentation::kCompressedSigned:   // Fall through.
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:
+#ifdef V8_COMPRESS_POINTERS
       opcode = kX64Movl;
       break;
 #else
-    case MachineRepresentation::kCompressedSigned:   // Fall through.
-    case MachineRepresentation::kCompressedPointer:  // Fall through.
-    case MachineRepresentation::kCompressed:
       UNREACHABLE();
-      break;
+#endif
     case MachineRepresentation::kTaggedSigned:   // Fall through.
     case MachineRepresentation::kTaggedPointer:  // Fall through.
-    case MachineRepresentation::kTagged:
-      opcode = kX64Movq;
-      break;
-#endif
+    case MachineRepresentation::kTagged:         // Fall through.
     case MachineRepresentation::kWord64:
       opcode = kX64Movq;
       break;
@@ -275,7 +260,6 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
       break;
     case MachineRepresentation::kNone:
       UNREACHABLE();
-      break;
   }
   return opcode;
 }
@@ -284,46 +268,30 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
   switch (store_rep.representation()) {
     case MachineRepresentation::kFloat32:
       return kX64Movss;
-      break;
     case MachineRepresentation::kFloat64:
       return kX64Movsd;
-      break;
     case MachineRepresentation::kBit:  // Fall through.
     case MachineRepresentation::kWord8:
       return kX64Movb;
-      break;
     case MachineRepresentation::kWord16:
       return kX64Movw;
-      break;
     case MachineRepresentation::kWord32:
       return kX64Movl;
-      break;
+    case MachineRepresentation::kCompressedSigned:   // Fall through.
+    case MachineRepresentation::kCompressedPointer:  // Fall through.
+    case MachineRepresentation::kCompressed:
 #ifdef V8_COMPRESS_POINTERS
-    case MachineRepresentation::kTaggedSigned:   // Fall through.
-    case MachineRepresentation::kTaggedPointer:  // Fall through.
-    case MachineRepresentation::kTagged:
       return kX64MovqCompressTagged;
-    case MachineRepresentation::kCompressedSigned:   // Fall through.
-    case MachineRepresentation::kCompressedPointer:  // Fall through.
-    case MachineRepresentation::kCompressed:
-      return kX64Movl;
 #else
-    case MachineRepresentation::kCompressedSigned:   // Fall through.
-    case MachineRepresentation::kCompressedPointer:  // Fall through.
-    case MachineRepresentation::kCompressed:
       UNREACHABLE();
+#endif
     case MachineRepresentation::kTaggedSigned:   // Fall through.
     case MachineRepresentation::kTaggedPointer:  // Fall through.
-    case MachineRepresentation::kTagged:
-      return kX64Movq;
-      break;
-#endif
+    case MachineRepresentation::kTagged:         // Fall through.
     case MachineRepresentation::kWord64:
       return kX64Movq;
-      break;
     case MachineRepresentation::kSimd128:  // Fall through.
       return kX64Movdqu;
-      break;
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -380,7 +348,7 @@ void InstructionSelector::VisitStore(Node* node) {
   WriteBarrierKind write_barrier_kind = store_rep.write_barrier_kind();
 
   if (write_barrier_kind != kNoWriteBarrier) {
-    DCHECK(CanBeTaggedPointer(store_rep.representation()));
+    DCHECK(CanBeTaggedOrCompressedPointer(store_rep.representation()));
     AddressingMode addressing_mode;
     InstructionOperand inputs[] = {
         g.UseUniqueRegister(base),
@@ -930,7 +898,8 @@ void InstructionSelector::VisitInt32Sub(Node* node) {
       // Omit truncation and turn subtractions of constant values into immediate
       // "leal" instructions by negating the value.
       Emit(kX64Lea32 | AddressingModeField::encode(kMode_MRI),
-           g.DefineAsRegister(node), int64_input, g.TempImmediate(-imm));
+           g.DefineAsRegister(node), int64_input,
+           g.TempImmediate(base::NegateWithWraparound(imm)));
     }
     return;
   }
@@ -939,9 +908,9 @@ void InstructionSelector::VisitInt32Sub(Node* node) {
   if (m.left().Is(0)) {
     Emit(kX64Neg32, g.DefineSameAsFirst(node), g.UseRegister(m.right().node()));
   } else if (m.right().Is(0)) {
-    // TODO(jarin): We should be able to use {EmitIdentity} here
-    // (https://crbug.com/v8/7947).
-    Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(m.left().node()));
+    // {EmitIdentity} reuses the virtual register of the first input
+    // for the output. This is exactly what we want here.
+    EmitIdentity(node);
   } else if (m.right().HasValue() && g.CanBeImmediate(m.right().node())) {
     // Turn subtractions of constant values into immediate "leal" instructions
     // by negating the value.
@@ -2405,7 +2374,6 @@ void InstructionSelector::VisitWord32AtomicStore(Node* node) {
       break;
     default:
       UNREACHABLE();
-      return;
   }
   VisitAtomicExchange(this, node, opcode);
 }
@@ -2428,7 +2396,6 @@ void InstructionSelector::VisitWord64AtomicStore(Node* node) {
       break;
     default:
       UNREACHABLE();
-      return;
   }
   VisitAtomicExchange(this, node, opcode);
 }
@@ -2580,6 +2547,7 @@ VISIT_ATOMIC_BINOP(Xor)
 
 #define SIMD_TYPES(V) \
   V(F32x4)            \
+  V(I64x2)            \
   V(I32x4)            \
   V(I16x8)            \
   V(I8x16)
@@ -2595,6 +2563,10 @@ VISIT_ATOMIC_BINOP(Xor)
   V(F32x4Ne)               \
   V(F32x4Lt)               \
   V(F32x4Le)               \
+  V(I64x2Add)              \
+  V(I64x2Sub)              \
+  V(I64x2Eq)               \
+  V(I64x2Ne)               \
   V(I32x4Add)              \
   V(I32x4AddHoriz)         \
   V(I32x4Sub)              \
@@ -2655,6 +2627,7 @@ VISIT_ATOMIC_BINOP(Xor)
   V(F32x4Neg)               \
   V(F32x4RecipApprox)       \
   V(F32x4RecipSqrtApprox)   \
+  V(I64x2Neg)               \
   V(I32x4SConvertI16x8Low)  \
   V(I32x4SConvertI16x8High) \
   V(I32x4Neg)               \
@@ -2669,6 +2642,9 @@ VISIT_ATOMIC_BINOP(Xor)
   V(S128Not)
 
 #define SIMD_SHIFT_OPCODES(V) \
+  V(I64x2Shl)                 \
+  V(I64x2ShrS)                \
+  V(I64x2ShrU)                \
   V(I32x4Shl)                 \
   V(I32x4ShrS)                \
   V(I32x4ShrU)                \
@@ -2701,6 +2677,7 @@ void InstructionSelector::VisitS128Zero(Node* node) {
          g.Use(node->InputAt(0)));                           \
   }
 SIMD_TYPES(VISIT_SIMD_SPLAT)
+VISIT_SIMD_SPLAT(F64x2)
 #undef VISIT_SIMD_SPLAT
 
 #define VISIT_SIMD_EXTRACT_LANE(Type)                              \
@@ -3029,7 +3006,10 @@ void InstructionSelector::VisitS8x16Shuffle(Node* node) {
         // pshufd takes a single imm8 shuffle mask.
         opcode = kX64S32x4Swizzle;
         no_same_as_first = true;
-        src0_needs_reg = false;
+        // TODO(v8:9083): This doesn't strictly require a register, forcing the
+        // swizzles to always use registers until generation of incorrect memory
+        // operands can be fixed.
+        src0_needs_reg = true;
         imms[imm_count++] = shuffle_mask;
       }
     } else {
